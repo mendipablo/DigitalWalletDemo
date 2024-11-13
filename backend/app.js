@@ -21,7 +21,7 @@ const transactions = [];
 const tokens = [
     { id:'1', name: 'BNB', symbol: 'BNB', balance: 1.1131 },
     { id:'2', name: 'Bitcoin', symbol: 'BTC', balance: 0.0999 },
-    { id:'3', name: 'DragonSlayer', symbol: 'DSL', balance: 0 },
+    { id:'3', name: 'Solana', symbol: 'SOL', balance: 0 },
     { id:'4', name: 'USDT', symbol: 'USDT', balance: 10.00 },
     { id:'5', name: 'Tether USD', symbol: 'USDT', balance: 100.00 },
 ];
@@ -135,21 +135,52 @@ app.get('/generate-qr', authenticateToken, async (req, res) => {
     console.log('###########################################################################################');
 });
 
+const calculateCryptoAmount = (amount, tokenPrice) => {
+    if (!tokenPrice || tokenPrice === 0) {
+        throw new Error("Invalid token price");
+    }
+    return parseFloat((amount / tokenPrice).toFixed(6)); 
+};
+
 
 
 // Ruta POST para procesar el pago
 app.post('/process-payment', authenticateToken, async (req, res) => {
     const { transactionId, amount, crypto } = req.body;
 
-    // Encontrar el token seleccionado
-    const tokenToUpdate = tokens.find(token => token.symbol === crypto);
+    try {
+        const prices = await fetchTokenData();
+        const tokenPrice = prices[crypto]?.price;
 
-    console.log('se encontro el token', tokenToUpdate)
+        if (!tokenPrice) {
+            return res.status(400).json({ error: `No price data available for token ${crypto}` });
+        }
 
-    // Responder con el nuevo balance actualizado del token
-    res.json({ message: 'Pago exitoso' });
+        const cryptoAmount = calculateCryptoAmount(amount, tokenPrice);
+
+        const tokenToUpdate = tokens.find(token => token.symbol === crypto);
+        if (tokenToUpdate) {
+            // Verificar si el balance es suficiente para realizar la compra
+            if (tokenToUpdate.balance < cryptoAmount) {
+                return res.status(400).json({ error: 'Insufficient token balance' });
+            }
+
+            // Restar la cantidad calculada del balance
+            tokenToUpdate.balance -= cryptoAmount;
+
+            return res.json({
+                message: 'Pago exitoso',
+                newBalance: tokenToUpdate.balance,
+                cryptoAmount
+            });
+        } else {
+            return res.status(404).json({ error: 'Token not found' });
+        }
+    } catch (error) {
+        console.error('Error processing payment:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
 });
-
 
 
 
